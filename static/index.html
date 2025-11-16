@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gesture Detection</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        body { background: #f5f7fa }
+        video, img { width: 100%; border-radius: 12px }
+        .card { border-radius: 14px; box-shadow: 0px 8px 20px rgba(0,0,0,0.06) }
+    </style>
+</head>
+
+<body class="p-4">
+    <div class="container">
+        <div class="row g-4">
+            <div class="col-md-6">
+                <div class="card p-3">
+                    <h4>Camera</h4>
+                    <video id="camera" autoplay playsinline></video>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card p-3">
+                    <h4>Result</h4>
+                    <img id="result-image" src="" />
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="canvas" style="display:none"></canvas>
+
+<script>
+const video = document.getElementById("camera");
+const canvas = document.getElementById("canvas");
+const resultImage = document.getElementById("result-image");
+
+// Start camera
+navigator.mediaDevices.getUserMedia({ video: true })
+    .then(stream => { video.srcObject = stream; })
+    .catch(err => console.error("Camera error:", err));
+
+setInterval(() => captureAndSend(), 2500);   // every 2.5s
+
+async function captureAndSend() {
+    if (!video.videoWidth) return;
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+
+    canvas.toBlob(async blob => {
+        if (!blob) {
+            console.error("Blob failed");
+            return;
+        }
+
+        let formData = new FormData();
+        formData.append("file", blob, "frame.jpg");
+
+        try {
+            let res = await fetch("/upload-from-web", {
+                method: "POST",
+                body: formData
+            });
+
+            if (!res.ok) {
+                console.error("Server error:", await res.text());
+                return;
+            }
+
+            let data = await res.json();
+            console.log("Prediction:", data);
+
+            if (data.image_url) resultImage.src = data.image_url;
+
+        } catch (e) {
+            console.error("Upload error:", e);
+        }
+    }, "image/jpeg", 0.8);
+}
+</script>
+</body>
+</html>
