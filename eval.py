@@ -1,9 +1,9 @@
 import torch
 import numpy as np
-from model import GestureTCN
+from modelGesture import GestureTCN
 from pathlib import Path
 
-DATA_DIR = Path("data/gesture")
+DATA_DIR = Path("data/testGesture")
 CLASS_NAMES = sorted([p.name for p in DATA_DIR.iterdir() if p.is_dir()]) if DATA_DIR.exists() else ["absolute","confused","idea"]
 
 model = GestureTCN(num_joints=33, in_features=3, num_classes=len(CLASS_NAMES))

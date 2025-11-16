@@ -1,88 +1,134 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Gesture Detection</title>
 
+    <!-- Bootstrap -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 
     <style>
-        body { background: #f5f7fa }
-        video, img { width: 100%; border-radius: 12px }
-        .card { border-radius: 14px; box-shadow: 0px 8px 20px rgba(0,0,0,0.06) }
+        body {
+            background: #eef2f7;
+            font-family: "Inter", sans-serif;
+        }
+
+        .app-card {
+            border-radius: 18px;
+            background: white;
+            padding: 20px;
+            box-shadow: 0 8px 22px rgba(0, 0, 0, 0.07);
+        }
+
+        #camera {
+            width: 100%;
+            border-radius: 14px;
+        }
+
+        #result-image {
+            width: 100%;
+            border-radius: 14px;
+        }
+
+        .title-text {
+            font-weight: 600;
+            color: #2b2b2b;
+        }
+
+        .prediction-label {
+            font-size: 20px;
+            font-weight: 600;
+            margin-top: 10px;
+            color: #0d6efd;
+        }
     </style>
 </head>
 
 <body class="p-4">
+
     <div class="container">
+        <h2 class="mb-4 text-center fw-bold">Real-Time Gesture Detection</h2>
+
         <div class="row g-4">
+
+            <!-- CAMERA SECTION -->
             <div class="col-md-6">
-                <div class="card p-3">
-                    <h4>Camera</h4>
+                <div class="app-card">
+                    <h5 class="title-text mb-3">Camera</h5>
                     <video id="camera" autoplay playsinline></video>
                 </div>
             </div>
+
+            <!-- RESULT SECTION -->
             <div class="col-md-6">
-                <div class="card p-3">
-                    <h4>Result</h4>
-                    <img id="result-image" src="" />
+                <div class="app-card text-center">
+                    <h5 class="title-text mb-3">Prediction Result</h5>
+                    <img id="result-image" src="/static/placeholder.jpg" alt="Prediction Image" />
+                    <div id="class-name" class="prediction-label">Detecting...</div>
                 </div>
             </div>
+
         </div>
     </div>
 
     <canvas id="canvas" style="display:none"></canvas>
 
-<script>
-const video = document.getElementById("camera");
-const canvas = document.getElementById("canvas");
-const resultImage = document.getElementById("result-image");
+    <script>
+        const video = document.getElementById("camera");
+        const canvas = document.getElementById("canvas");
+        const resultImage = document.getElementById("result-image");
+        const classNameText = document.getElementById("class-name");
 
-// Start camera
-navigator.mediaDevices.getUserMedia({ video: true })
-    .then(stream => { video.srcObject = stream; })
-    .catch(err => console.error("Camera error:", err));
+        // START CAMERA
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(stream => { video.srcObject = stream })
+            .catch(err => console.error("Camera error:", err));
 
-setInterval(() => captureAndSend(), 2500);   // every 2.5s
+        // SEND EVERY 2 SECONDS
+        setInterval(() => captureAndSend(), 2000);
 
-async function captureAndSend() {
-    if (!video.videoWidth) return;
+        async function captureAndSend() {
+            if (!video.videoWidth) return;
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext("2d").drawImage(video, 0, 0);
+            // Copy frame → canvas
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext("2d").drawImage(video, 0, 0);
 
-    canvas.toBlob(async blob => {
-        if (!blob) {
-            console.error("Blob failed");
-            return;
+            // Convert canvas → blob (JPEG)
+            canvas.toBlob(async blob => {
+                if (!blob) return;
+
+                let formData = new FormData();
+                formData.append("file", blob, "frame.jpg");
+
+                try {
+                    let res = await fetch("/upload-from-web", {
+                        method: "POST",
+                        body: formData
+                    });
+
+                    if (!res.ok) {
+                        console.error("Server error:", await res.text());
+                        return;
+                    }
+
+                    let data = await res.json();
+                    console.log("Prediction:", data);
+
+                    // UI UPDATE
+                    if (data.class_name) classNameText.textContent = data.class_name;
+                    if (data.image_url) resultImage.src = data.image_url;
+
+                } catch (e) {
+                    console.error("Upload error:", e);
+                }
+
+            }, "image/jpeg", 0.8);
         }
+    </script>
 
-        let formData = new FormData();
-        formData.append("file", blob, "frame.jpg");
-
-        try {
-            let res = await fetch("/upload-from-web", {
-                method: "POST",
-                body: formData
-            });
-
-            if (!res.ok) {
-                console.error("Server error:", await res.text());
-                return;
-            }
-
-            let data = await res.json();
-            console.log("Prediction:", data);
-
-            if (data.image_url) resultImage.src = data.image_url;
-
-        } catch (e) {
-            console.error("Upload error:", e);
-        }
-    }, "image/jpeg", 0.8);
-}
-</script>
 </body>
 </html>
