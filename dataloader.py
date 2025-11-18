@@ -20,6 +20,13 @@ class SkeletonDataset(Dataset):
         return len(self.samples)
 
     def __getitem__(self, idx):
-        x = np.load(self.samples[idx])         # (T, J, C)
-        x = torch.tensor(x, dtype=torch.float32)
-        return x, self.labels[idx]
+        # Load numpy: (T, J, C)
+        x = np.load(self.samples[idx]).astype(np.float32)
+
+        # Convert to tensor
+        x = torch.tensor(x, dtype=torch.float32)   # (T, J, C)
+
+        # RETURN: (T, 33, 3), label_tensor
+        label = torch.tensor(self.labels[idx], dtype=torch.long)
+
+        return x, label

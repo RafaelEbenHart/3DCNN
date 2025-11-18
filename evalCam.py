@@ -20,7 +20,7 @@ if model_path.exists():
     model.eval()
     print("Model loaded successfully.")
 else:
-    print("Model not found. Predictions will be random.")
+    print("Model not found — predictions will be random.")
 
 # ----------------------------
 # LOAD REPRESENTATIVE IMAGES
@@ -30,40 +30,49 @@ for cname in CLASS_NAMES:
     img_path = Path(f"static/{cname}.jpg")
     if img_path.exists():
         img = cv2.imread(str(img_path))
-        img = cv2.resize(img, (350, 350))  # ukuran fix window preview
+        img = cv2.resize(img, (350, 350))  # ukuran fix preview
         REP_IMAGES[cname] = img
     else:
         REP_IMAGES[cname] = None
-        print(f"[WARN] Representative image not found for class: {cname}")
+        print(f"[WARN] Representative image missing for: {cname}")
 
 # ----------------------------
-# POSE ESTIMATION
+# MEDIAPIPE
 # ----------------------------
 mp_holistic = mp.solutions.holistic
-holistic = mp_holistic.Holistic(static_image_mode=False, min_detection_confidence=0.5)
+holistic = mp_holistic.Holistic(
+    static_image_mode=False,
+    min_detection_confidence=0.5,
+    min_tracking_confidence=0.5
+)
 
+# ----------------------------
+# FRAME BUFFER (T = 30)
+# ----------------------------
+MAX_FRAMES = 30
+frame_buffer = []
+
+# ----------------------------
+# FUNCTION: Extract keypoints
+# ----------------------------
 def extract_keypoints(frame):
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     results = holistic.process(frame_rgb)
 
-    keypoints = np.zeros((33, 3), dtype=np.float32)
+    pts = np.zeros((33, 3), dtype=np.float32)
 
     if results.pose_landmarks:
-        for i, lm in enumerate(results.pose_landmarks.landmark):
-            if i >= 33:
-                break
-            keypoints[i] = [lm.x, lm.y, lm.z]
+        for i, lm in enumerate(results.pose_landmarks.landmark[:33]):
+            pts[i] = [lm.x, lm.y, lm.z]
 
-    tensor = torch.tensor(keypoints, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
-    return tensor  # (1,1,33,3)
+    pts = (pts - 0.5) * 2.0  # normalization
+
+    return pts   # (33,3)
 
 # ----------------------------
 # OPEN CAMERA
 # ----------------------------
 cap = cv2.VideoCapture(0)
-if not cap.isOpened():
-    print("Cannot open camera")
-    exit()
 
 cv2.namedWindow("Camera Feed", cv2.WINDOW_NORMAL)
 cv2.resizeWindow("Camera Feed", 1280, 720)
@@ -71,12 +80,10 @@ cv2.resizeWindow("Camera Feed", 1280, 720)
 cv2.namedWindow("Class Preview", cv2.WINDOW_NORMAL)
 cv2.resizeWindow("Class Preview", 400, 400)
 
-# ----------------------------
-# PREDICTION SMOOTHING
-# ----------------------------
+# Prediction smoothing
 pred_buffer = []
-BUFFER_SIZE = 5
-pred_class = "Detecting..."
+PRED_SMOOTH = 5
+
 
 # ----------------------------
 # MAIN LOOP
@@ -87,38 +94,46 @@ while True:
         print("Failed to grab frame")
         break
 
-    # Extract keypoints
-    input_tensor = extract_keypoints(frame)
+    pts = extract_keypoints(frame)
 
-    # Predict
-    with torch.no_grad():
-        if model_path.exists():
-            output = model(input_tensor)
+    frame_buffer.append(pts)
+    if len(frame_buffer) > MAX_FRAMES:
+        frame_buffer.pop(0)
+
+    # Predict only when 30 frames ready
+    if len(frame_buffer) == MAX_FRAMES:
+        seq = np.stack(frame_buffer)  # (30,33,3)
+        seq = torch.tensor(seq, dtype=torch.float32)
+        seq = seq.permute(2, 0, 1).unsqueeze(0).unsqueeze(-1)
+        # (1, 3, 30, 33, 1)
+
+        with torch.no_grad():
+            output = model(seq)
             pred_idx = torch.argmax(output, dim=1).item()
             pred_buffer.append(pred_idx)
-        else:
-            pred_buffer.append(np.random.randint(0, NUM_CLASSES))
 
-    # Keep buffer size small
-    if len(pred_buffer) > BUFFER_SIZE:
+    else:
+        pred_buffer.append(-1)
+
+    if len(pred_buffer) > PRED_SMOOTH:
         pred_buffer.pop(0)
 
-    # Majority vote
-    pred_class = CLASS_NAMES[max(set(pred_buffer), key=pred_buffer.count)]
+    if pred_buffer[-1] == -1:
+        pred_class = "Detecting..."
+    else:
+        pred_class = CLASS_NAMES[max(set(pred_buffer), key=pred_buffer.count)]
 
-    # --------------------------------
-    # SHOW REPRESENTATIVE IMAGE IN SEPARATE WINDOW
-    # --------------------------------
+    # ============= DISPLAY PREVIEW IMAGE =============
     rep_img = REP_IMAGES.get(pred_class)
     if rep_img is not None:
         cv2.imshow("Class Preview", rep_img)
 
-    # --------------------------------
-    # CAMERA FEED (NO PREDICTION TEXT)
-    # --------------------------------
+    # ============= CAMERA FEED =============
+    cv2.putText(frame, f"Prediction: {pred_class}", (30, 50),
+                cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 3)
+
     cv2.imshow("Camera Feed", frame)
 
-    # Quit with 'q'
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 

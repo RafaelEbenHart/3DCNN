@@ -15,16 +15,16 @@ cap = cv2.VideoCapture(0)
 # =========================
 # Konfigurasi dataset
 # =========================
-GESTURE_NAME = "netral"  # ganti sesuai gesture
-DATATYPE = "gesture"   # "gesture" atau "testGesture"
+GESTURE_NAME = "absolute"  # ganti sesuai gesture
+DATATYPE = "gesture"        # "gesture" atau "testGesture"
 DATA_DIR = f"data/{DATATYPE}/{GESTURE_NAME}"
 os.makedirs(DATA_DIR, exist_ok=True)
 print("Folder created / exists:", os.path.abspath(DATA_DIR))
 
-sequence = []        # menyimpan frame keypoints
-sample_id = 1        # nama file
-FRAME_COUNT = 30     # jumlah frame per sample
-SMOOTH_WINDOW = 3    # untuk smoothing
+sequence = []         # menyimpan frame keypoints
+sample_id = 1         # nama file
+FRAME_COUNT = 30      # jumlah frame per sample
+SMOOTH_WINDOW = 3     # untuk smoothing
 
 # =========================
 # Helper functions
@@ -33,6 +33,7 @@ def relative_coordinates(seq):
     """Ubah keypoints jadi relatif terhadap root joint (0)"""
     return [frame - frame[0] for frame in seq]
 
+
 def smooth_sequence(seq, window=3):
     """Smoothing moving average sederhana"""
     smoothed = []
@@ -40,6 +41,7 @@ def smooth_sequence(seq, window=3):
         start = max(0, i - window + 1)
         smoothed.append(np.mean(seq[start:i+1], axis=0))
     return smoothed
+
 
 def pad_or_crop_sequence(seq, target_len=30):
     """Pastikan selalu target_len frame"""
@@ -65,7 +67,9 @@ while True:
         mp_draw.draw_landmarks(img, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
 
         # Ambil 33 keypoints (x, y, visibility)
-        frame_keypoints = np.array([[lm.x, lm.y, lm.visibility] for lm in results.pose_landmarks.landmark])
+        frame_keypoints = np.array(
+            [[lm.x, lm.y, lm.visibility] for lm in results.pose_landmarks.landmark]
+        )
         sequence.append(frame_keypoints)
 
         # Smoothing dan relative coordinates
@@ -78,8 +82,7 @@ while True:
             filename = os.path.join(DATA_DIR, f"sample_{sample_id:03d}.npy")
             np.save(filename, np.array(seq_proc))
             print("Saved:", filename)
-
-            sequence = []       # reset sequence untuk sample berikut
+            sequence = []  # reset sequence untuk sample berikut
             sample_id += 1
 
     # Tampilkan
